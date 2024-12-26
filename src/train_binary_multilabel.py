@@ -1,0 +1,202 @@
+import argparse
+import pysam
+import random
+import numpy as np
+
+import models
+import utils
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.utils.data import Dataset, DataLoader
+import warnings
+warnings.filterwarnings("ignore")
+
+print("Starting the script...")
+params = argparse.ArgumentParser(description='train model')
+params.add_argument("--data",help="peaks file",required=True)
+params.add_argument("--name",help="train name",required=True)
+params.add_argument("--model",help="model name",default="Basset")
+params.add_argument("--activate",help="activate loss",required=True)
+params.add_argument("--seqlen",help="sequence length",required=True)
+params.add_argument("--task",help="task number",required=True)
+params.add_argument("--seed",help="random seed",default=40,type=int)
+params.add_argument("--device",help="device cuda",default="cuda:0")
+params.add_argument("--fasta",help="fasta seq file",required=True)
+params.add_argument("--epoch",help="epochs",default=100)
+params.add_argument("--lr",help="learn rata",default=0.0001)
+params.add_argument("--batch",help="batch size",default=256)
+params.add_argument("--outpath",help="model name")
+args = params.parse_args()
+
+
+
+def set_random_seed(random_seed = 40):
+    # set random_seed
+    random.seed(random_seed)
+    np.random.seed(random_seed)
+    torch.random.seed = random_seed
+    torch.manual_seed(random_seed)
+    torch.cuda.manual_seed(random_seed) 
+    torch.cuda.manual_seed_all(random_seed)
+
+fasta_file = args.fasta
+
+fasta = pysam.FastaFile(fasta_file)
+
+class BinaryDataset(Dataset):
+    def __init__(self, data,label):
+        self.data = data
+        self.label = label
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        return self.data[idx],self.label[idx]
+
+set_random_seed(args.seed)
+task_name = args.name
+batch_size = int(args.batch)
+epochs = int(args.epoch)
+data_ = np.load(args.data,allow_pickle=True)
+device = args.device if torch.cuda.is_available() else "cpu"
+task_num = int(args.task)
+linear_units = utils.linear_units_dict[args.model]["%sbp"%args.seqlen]
+
+# Create a model
+if args.activate == "relu":
+    model = eval(f"models.{args.model}({task_num},{linear_units},'relu')")
+elif args.activate == "exp":
+    model = eval(f"models.{args.model}({task_num},{linear_units},'exp')")
+model.to(device)
+
+
+#定义训练参数
+criterion = nn.BCELoss()
+optimizer = torch.optim.Adam(model.parameters(),lr=float(args.lr),eps=0.00001)
+scheduler = torch.optim.lr_scheduler.StepLR(optimizer=optimizer,step_size=3,gamma=0.8)
+
+model_save_path = "%s_%s_%s_%s_%s"%(task_name,args.model,args.seed,args.seqlen,args.activate)
+early_stopping = utils.EarlyStopping(save_path=args.outpath,model_name=model_save_path,patience=5)
+
+
+
+# #计算标签的权重
+# counter = collections.Counter(data_["train_label"])
+# counter = dict(counter)
+# weights = torch.tensor([int(counter[k]) for k in counter],dtype=torch.float) / len(data_["train_label"])
+# samples_weights = weights[data_["train_label"]]
+# sampler = torch.utils.data.sampler.WeightedRandomSampler(samples_weights,len(samples_weights),replacement=True)
+
+
+# Create a DataLoader for the training set
+
+train_dataset = BinaryDataset(data_["train_data"],data_["train_label"])
+train_loader = DataLoader(train_dataset, batch_size=int(args.batch),num_workers=5,shuffle=True) 
+
+
+# Create a DataLoader for the validation set
+val_dataset = BinaryDataset(data_["test_data"],data_["test_label"])
+val_loader = DataLoader(val_dataset, batch_size=int(args.batch), shuffle=False,num_workers=5)
+
+
+#define train
+def train(model,train_dataloader,test_dataloader,optimizer,criterion,epochs,early_stopping,scheduler,save_path,model_name,device):
+    '''
+    train model
+    '''
+    train_loss_ls = []
+    test_loss_ls = []
+    train_auc_ls = []
+    for epoch in range(epochs):
+        model.train()
+        total_step = len(train_dataloader)
+        running_loss = 0.0
+        train_auc = 0.0
+        for index,(data,label) in enumerate(train_dataloader):
+
+            ##get single batch data
+            train_data =data.float().to(device).transpose(1,2)
+            if task_num > 1:
+                train_label = label.to(device)
+            else:
+                train_label = label.to(device).view(-1,1)
+
+
+            optimizer.zero_grad()
+
+            outputs = model(train_data)
+            outputs = F.sigmoid(outputs)
+            loss = criterion(outputs,train_label.float())
+
+            running_loss += loss.item()
+            
+            loss.backward()
+            optimizer.step()
+            
+
+                # train_auc += auroc
+
+            if (index + 1) % 100 == 0:
+                print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}'
+                        .format(epoch + 1, epochs, index + 1, total_step, loss.item()))
+        epoch_loss = running_loss / (len(train_dataloader))
+        epoch_auc = train_auc / (len(train_dataloader))
+        train_loss_ls.append(epoch_loss)
+        train_auc_ls.append(epoch_auc)
+
+
+
+        print("------------eval------------------------")
+        test_total_step = len(test_dataloader)
+        test_runing_loss = 0.0
+        eval_auroc = 0.0
+        with torch.no_grad():
+            model.eval()
+            for _,(data,label) in enumerate(test_dataloader):
+
+                ##get single batch data
+                test_data = data.float().to(device).transpose(1,2)
+                if task_num > 1:
+                    test_label = label.to(device)
+                else:
+                    test_label = label.to(device).view(-1,1)
+
+                #forward
+                outputs = model(test_data)
+                outputs = F.sigmoid(outputs)
+
+
+                test_loss = criterion(outputs,test_label.float())
+                test_runing_loss += test_loss.item()
+
+
+        epoch_test_loss = test_runing_loss / test_total_step
+        test_loss_ls.append(epoch_test_loss)
+
+        print('Epoch [{}/{}], Train Loss: {:.4f},Train AUC: {:.4f}, Eval Loss: {:.4f},Eval AUC: {:.4f}'.format(epoch + 1, epochs, epoch_loss,epoch_auc,epoch_test_loss,eval_auroc))
+
+
+        #early stopping and step scheduler
+        early_stopping(epoch_test_loss,model)
+
+        scheduler.step()
+
+        #达到早停止条件时，early_stop会被置为True
+        if early_stopping.early_stop:
+            print("Early stopping")
+            break #跳出迭代，结束训练
+
+    return train_loss_ls,test_loss_ls
+
+
+
+
+
+train_loss_ls,test_loss_ls = train(model,train_loader,val_loader,optimizer,criterion,epochs,early_stopping,scheduler,args.outpath,model_save_path,device)
+np.savez("%s/%s_loss_eval_metrics.npz"%(args.outpath,model_save_path),train_loss=train_loss_ls,test_loss = test_loss_ls) 
+
+
+
