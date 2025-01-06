@@ -1,5 +1,5 @@
 # cisFinder
-cisFinder (Sequence Function Model Comprehensive Evaluator) is a framework for the evaluation of genomic deep learning models.  In addition to assessing model prediction performance, this framework also evaluates:
+cisFinder (comprehensive interpretable sequence-Function model evaluator) is a framework for the evaluation of genomic deep learning models.  In addition to assessing model prediction performance, this framework also evaluates:
 - The impact of input sequence length.
 - The selection of positive and negative samples.
 - Predictions across different sequencing depths.
