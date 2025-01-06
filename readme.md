@@ -9,9 +9,9 @@ cisFinder (comprehensive interpretable sequence-Function model evaluator) is a f
 ## Getting started
 Installation (Please install anaconda first)
 ```shell
-git clone https://github.com/bioczsun/SeqFMER.git
-conda create -n SeqFMER python=3.11
-conda activate SeqFMER
+git clone https://github.com/bioczsun/cisFinder.git
+conda create -n cisFinder python=3.11
+conda activate cisFinder
 conda install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia
 conda install meme captum jupyter pandas pysam bedtools bedops pybigwig scikit-learn matplotlib -c conda-forge -c bioconda
 ```
@@ -19,7 +19,7 @@ conda install meme captum jupyter pandas pysam bedtools bedops pybigwig scikit-l
 
 ### Data preprocessing
 ```shell
-cd SeqFMER/data/ref
+cd cisFinder/data/ref
 
 # Download hg38.fa
 wget "https://hgdownload.cse.ucsc.edu/goldenpath/hg38/bigZips/hg38.fa.gz" 
