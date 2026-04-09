@@ -1,10 +1,15 @@
 # cisFinder
+## Citation
+If you use cisFinder in your research, please cite:
+
+Sun C, Sun Y, Xu K, et al. A comprehensive benchmark and guide for sequence-function interpretable deep learning models in genomics[J]. Under Review(Genome Biology).
 cisFinder (comprehensive interpretable sequence-Function model evaluator) is a framework for the evaluation of genomic deep learning models.  In addition to assessing model prediction performance, this framework also evaluates:
 - The impact of input sequence length.
 - The selection of positive and negative samples.
 - Predictions across different sequencing depths.
 - The interpretability of learned representations.
-- The prediction of variant effects in high-significance regions. 
+- The prediction of variant effects in high-significance regions.
+
 
 ## Getting started
 Installation (Please install anaconda first)
